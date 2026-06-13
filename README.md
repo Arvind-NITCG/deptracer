@@ -466,7 +466,7 @@ deptracer build . shakthi_app shakthi_app.spec
 
 - **Issues**: Report on GitHub
 - **Questions**: GitHub Discussions
-- **Security**: Email security@deptracer.dev
+- **Security**: Email sooryarvind@gmail.com
 
 ---
 
@@ -506,4 +506,4 @@ deptracer build . my_app my_app.spec
 
 That's it. Your dependencies are handled automatically.
 
-**Ship with confidence.** 🚀
+**Ship with confidence.** 
