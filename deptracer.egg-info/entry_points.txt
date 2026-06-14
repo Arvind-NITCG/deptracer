@@ -1,0 +1,2 @@
+[console_scripts]
+deptracer = deptracer.cli:main

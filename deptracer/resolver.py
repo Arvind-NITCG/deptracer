@@ -33,7 +33,7 @@ def safe_realpath(path: str, max_depth=10) -> str:
     set_pipeline_state("RESOLVER", "Symlink resolution depth exceeded.", "Check for circular symlinks or excessive nesting.")
     return os.path.abspath(path)
 
-def hunt_missing_library(file_name, project_dir=".", max_retries=3):
+def hunt_missing_library(file_name, project_dir=".", max_retries=3, verbose=False):
     """Smart Hunt: Handles hard links, versioning, and flaky network retries."""
     
     base_name = re.sub(r'\.so(\.\d+)*$', '.so', file_name)
@@ -55,6 +55,8 @@ def hunt_missing_library(file_name, project_dir=".", max_retries=3):
             ]
             
             for search_dir in search_order:
+                if verbose:
+                    print(f"    \033[90m[RESOLVER-VERBOSE] Scanning dir: {search_dir} for {variant}\033[0m")
                 candidate = os.path.join(search_dir, variant)
                 if os.path.exists(candidate) and os.access(candidate, os.R_OK):
                     real_target = safe_realpath(candidate)
@@ -66,6 +68,9 @@ def hunt_missing_library(file_name, project_dir=".", max_retries=3):
                         
                     if variant not in [res[0] for res in search_results]:
                         search_results.append((variant, real_target))
+
+            if verbose:
+                print(f"    \033[90m[RESOLVER-VERBOSE] Initiating deep root system scan (find /) for {variant}...\033[0m")
 
             command = [
                 "find", "/", "(", "-path", "/proc", "-o", "-path", "/sys", "-o", "-path", "/dev", "-o", "-path", "/run", ")", 

@@ -2,7 +2,7 @@
 import subprocess
 import os
 
-def run_and_trace(executable_path, project_dir=".", log_name=None):
+def run_and_trace(executable_path, project_dir=".", log_name=None, verbose=False):
     if log_name is None:
         log_name = os.path.abspath(f"trace_{os.getpid()}.log")
 
@@ -27,6 +27,10 @@ def run_and_trace(executable_path, project_dir=".", log_name=None):
         "-o", log_name, 
         "-e", "trace=file"
     ] + bwrap_jail
+
+    if verbose:
+        print(f"    \033[90m[TRACER-VERBOSE] Launching strict bwrap sandbox...\033[0m")
+        print(f"    \033[90m[TRACER-VERBOSE] Payload: {' '.join(command[:8])} [...]\033[0m")
 
     try:
         process = subprocess.Popen(

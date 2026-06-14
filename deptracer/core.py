@@ -67,7 +67,7 @@ def run_akdeptracer(project_dir, binary_name, spec_name, verbose=False):
         print("")
         UI.step("CORE", f"Starting iteration {iteration}")
         
-        trace_result = tracer.run_and_trace(str(target_binary), str(project_dir))
+        trace_result = tracer.run_and_trace(str(target_binary), str(project_dir), verbose=verbose)
         if not trace_result or not trace_result[0]:
             UI.error("CORE", "Tracer failed. Pipeline aborted.")
             set_pipeline_state("TRACER", "Failed to trace binary.", "Check binary and permissions.Possible solution: chmod +x on the binary. Also ensure the binary is a valid executable. bwrap and strace must be installed on the host system.")
@@ -79,7 +79,7 @@ def run_akdeptracer(project_dir, binary_name, spec_name, verbose=False):
         resolved_patches = []
         iteration_unresolved = set()
         
-        missing_from_parser = list(parser.extract_missing_libraries(log_path))
+        missing_from_parser = list(parser.extract_missing_libraries(log_path, verbose=verbose))
         
         #if os.path.exists(log_path):
             #os.remove(log_path)
@@ -105,7 +105,7 @@ def run_akdeptracer(project_dir, binary_name, spec_name, verbose=False):
 
             UI.step("PARSER", f" Missing file named {target_filename}")
 
-            found_path = resolver.hunt_missing_library(target_filename, str(project_dir))
+            found_path = resolver.hunt_missing_library(target_filename, str(project_dir), verbose=verbose)
             if found_path:
                 UI.step("RESOLVER", f"Found {target_filename} at {found_path}")
                 resolved_patches.append((target_filename, found_path))
@@ -130,7 +130,7 @@ def run_akdeptracer(project_dir, binary_name, spec_name, verbose=False):
         else:
             UI.step("FIXER", f"Spec file patched with {len(resolved_patches)} new entries. Ready to recompile.")
             
-        if not compiler.build(str(spec_file),iteration = iteration):
+        if not compiler.build(str(spec_file),iteration = iteration,verbose=verbose):
             UI.error("CORE", "Compiler failed to build the executable. Pipeline aborted.")
             set_pipeline_state("COMPILER", "Compilation crashed.", "Check compilation process.")
             break

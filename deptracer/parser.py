@@ -67,7 +67,7 @@ class TraceParser:
         return False
 
     @classmethod
-    def stream_missing_libraries(cls, log_file_path):
+    def stream_missing_libraries(cls, log_file_path, verbose=False):
         cls.load_system_cache()
         
         library_status = {}  
@@ -118,10 +118,14 @@ class TraceParser:
                         if library_status.get(filename) != "FOUND":
                             library_status[filename] = "MISSING"
                             path_mapping[filename] = path
+                    else:
+                        if verbose:
+                            print(f"    \033[90m[PARSER-VERBOSE] Filtered system cache hit: {path}\033[0m")
 
         for filename, status in library_status.items():
             if status == "MISSING":
                 yield path_mapping[filename]
 
-def extract_missing_libraries(log_file_path):
-    yield from TraceParser.stream_missing_libraries(log_file_path)
+def extract_missing_libraries(log_file_path, verbose=False):
+    yield from TraceParser.stream_missing_libraries(log_file_path, verbose=verbose)
+    
