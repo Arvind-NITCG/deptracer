@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="deptracer", 
-    version="0.1.1",
+    version="0.1.2",
     author="Arvind K N",
     author_email="sooryarvind@gmail.com", 
     description="OS-Level Dependency Resolver & Auto-Patcher for PyInstaller",

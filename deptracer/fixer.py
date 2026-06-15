@@ -1,4 +1,3 @@
-# linux_core/fixer.py
 import os
 import re
 import tempfile
@@ -10,7 +9,6 @@ def set_pipeline_state(stage, error, fix):
         f.write(f"{stage}|{error}|{fix}")
 
 def get_data_dest(absolute_path):
-    """Intelligently determines the internal bundle destination for data files."""
     if 'site-packages' in absolute_path:
         parts = absolute_path.split('site-packages' + os.sep)
         if len(parts) > 1:
@@ -21,8 +19,7 @@ def get_data_dest(absolute_path):
     parent_folder = os.path.basename(os.path.dirname(absolute_path))
     return parent_folder if parent_folder else '.'
 
-def patch_spec_file(spec_path, resolved_patches):
-    
+def patch_spec_file(spec_path, resolved_payload):
     if not os.path.exists(spec_path) or not os.access(spec_path, os.W_OK):
         set_pipeline_state("FIXER", f"Spec file '{spec_path}' is not writable.", "Check file permissions.")
         return False
@@ -33,16 +30,14 @@ def patch_spec_file(spec_path, resolved_patches):
     binary_injections = ""
     data_injections = ""
 
-    for missing_name, absolute_path in resolved_patches:
-        if not os.path.exists(absolute_path):
-            continue
+    for missing_name, absolute_path in resolved_payload.get('binaries', []):
+        if os.path.exists(absolute_path):
+            binary_injections += f"\n    ('{absolute_path}', '.'),\n"
             
-        if absolute_path.endswith(('.so', '.dll', '.dylib', '.pyd')):
-            binary_injections += f"\n    ('{absolute_path}', '.'), # Added by deptracer\n"
-        else:
-
+    for missing_name, absolute_path in resolved_payload.get('data', []):
+        if os.path.exists(absolute_path):
             dest_folder = get_data_dest(absolute_path)
-            data_injections += f"\n    ('{absolute_path}', '{dest_folder}'), # Added by deptracer\n"
+            data_injections += f"\n    ('{absolute_path}', '{dest_folder}'),\n"
 
     bin_idx = next((i for i, l in enumerate(lines) if re.search(r'binaries\s*=\s*\[', l) and 'a.binaries' not in l), None)
     if bin_idx is not None and binary_injections:
@@ -51,6 +46,21 @@ def patch_spec_file(spec_path, resolved_patches):
     dat_idx = next((i for i, l in enumerate(lines) if re.search(r'datas\s*=\s*\[', l) and 'a.datas' not in l), None)
     if dat_idx is not None and data_injections:
         lines[dat_idx] = lines[dat_idx].replace('[', f'[{data_injections}', 1)
+    
+    hooks_idx = next((i for i, l in enumerate(lines) if re.search(r'runtime_hooks\s*=\s*\[', l)), None)
+    if hooks_idx is not None and "'_akdeptracer_probe.py'" not in lines[hooks_idx]:
+        lines[hooks_idx] = lines[hooks_idx].replace('[', "['_akdeptracer_probe.py', ", 1)
+
+    if resolved_payload.get('hidden_imports'):
+        hidden_entries = ',\n    '.join([f"'{imp}'" for imp in resolved_payload['hidden_imports']])
+        hidden_idx = next((i for i, l in enumerate(lines) if re.search(r'hiddenimports\s*=\s*\[', l)), None)
+        
+        if hidden_idx is not None:
+            lines[hidden_idx] = lines[hidden_idx].replace('[', f'[\n    {hidden_entries},\n    ', 1)
+        else:
+            fallback_idx = bin_idx if bin_idx is not None else 0
+            insert_block = f"hiddenimports = [\n    {hidden_entries}\n]\n\n"
+            lines.insert(fallback_idx + 1, insert_block)
 
     try:
         target_dir = os.path.dirname(spec_path) or '.'
@@ -64,5 +74,4 @@ def patch_spec_file(spec_path, resolved_patches):
         if 'tmp_path' in locals() and os.path.exists(tmp_path):
             os.unlink(tmp_path)
         set_pipeline_state("FIXER", f"File write error: {str(e)}", "Check file permissions and disk space.")
-        
         return False

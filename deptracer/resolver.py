@@ -3,6 +3,7 @@ import subprocess
 import os
 import time
 import re
+import site
 
 STATE_LOG = ".akdeptracer_state"
 
@@ -34,7 +35,7 @@ def safe_realpath(path: str, max_depth=10) -> str:
     return os.path.abspath(path)
 
 def hunt_missing_library(file_name, project_dir=".", max_retries=3, verbose=False):
-    """Smart Hunt: Handles hard links, versioning, and flaky network retries."""
+    """Smart Hunt: Handles hard links, versioning, flaky network retries, and Python Envs."""
     
     base_name = re.sub(r'\.so(\.\d+)*$', '.so', file_name)
     variants = [
@@ -46,15 +47,24 @@ def hunt_missing_library(file_name, project_dir=".", max_retries=3, verbose=Fals
     
     search_results = []
     
+    safe_zones = [
+        os.path.abspath(project_dir),
+        os.path.abspath(os.path.join(project_dir, "lib")),
+        os.path.abspath(os.path.join(project_dir, "build/lib"))
+    ]
+    try:
+        safe_zones.extend(site.getsitepackages())
+        safe_zones.append(site.getusersitepackages())
+    except Exception:
+        pass
+    
     for attempt in range(max_retries):
         for variant in variants:
-            search_order = [
-                os.path.abspath(project_dir),
-                os.path.abspath(os.path.join(project_dir, "lib")),
-                os.path.abspath(os.path.join(project_dir, "build/lib"))
-            ]
             
-            for search_dir in search_order:
+            # Phase 1: Fast direct path checking within Safe Zones
+            for search_dir in safe_zones:
+                if not os.path.exists(search_dir):
+                    continue
                 if verbose:
                     print(f"    \033[90m[RESOLVER-VERBOSE] Scanning dir: {search_dir} for {variant}\033[0m")
                 candidate = os.path.join(search_dir, variant)
@@ -69,29 +79,31 @@ def hunt_missing_library(file_name, project_dir=".", max_retries=3, verbose=Fals
                     if variant not in [res[0] for res in search_results]:
                         search_results.append((variant, real_target))
 
-            if verbose:
-                print(f"    \033[90m[RESOLVER-VERBOSE] Initiating deep root system scan (find /) for {variant}...\033[0m")
+            for zone in safe_zones:
+                if not os.path.exists(zone):
+                    continue
+                if verbose:
+                    print(f"    \033[90m[RESOLVER-VERBOSE] Initiating deep scan in safe zone: {zone} for {variant}...\033[0m")
 
-            command = [
-                "find", "/", "(", "-path", "/proc", "-o", "-path", "/sys", "-o", "-path", "/dev", "-o", "-path", "/run", ")", 
-                "-prune", "-o", "(", "-type", "f", "-o", "-type", "l", ")", "-name", variant, "-print", "-quit"
-            ]
-            
-            try:
-                result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=45)
-                found_path = result.stdout.strip()
-                if found_path and os.access(found_path, os.R_OK):
-                    real_target = safe_realpath(found_path)
-                    
-                    if os.path.islink(found_path):
-                        print(f"[RESOLVER] Symlink: {found_path} → {real_target}")
-                    else:
-                        stat_info = os.stat(found_path)
+                command = [
+                    "find", zone, "-type", "f", "-name", variant, "-readable", "-print", "-quit"
+                ]
+                
+                try:
+                    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=30)
+                    found_path = result.stdout.strip()
+                    if found_path and os.access(found_path, os.R_OK):
+                        real_target = safe_realpath(found_path)
                         
-                    if variant not in [res[0] for res in search_results]:
-                        search_results.append((variant, real_target))
-            except Exception as e:
-                pass
+                        if os.path.islink(found_path):
+                            print(f"[RESOLVER] Symlink: {found_path} → {real_target}")
+                        else:
+                            stat_info = os.stat(found_path)
+                            
+                        if variant not in [res[0] for res in search_results]:
+                            search_results.append((variant, real_target))
+                except Exception as e:
+                    pass
         
         if search_results:
             break
@@ -113,6 +125,6 @@ def hunt_missing_library(file_name, project_dir=".", max_retries=3, verbose=Fals
     elif search_results:
         return search_results[0][1]
         
-    print(f"[RESOLVER] Critical Failure: {file_name} not found anywhere on host.")
+    print(f"[RESOLVER] Target: {file_name} not found in Safe Zones. (Likely System OS Noise).")
     set_pipeline_state("RESOLVER", "File not found.", "Check file existence and search paths.")
     return None

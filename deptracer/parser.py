@@ -1,10 +1,30 @@
-# linux_core/parser.py
 import re
 import os
 import subprocess
+from pathlib import Path
+
+class HiddenImportDetector:
+    PATTERN = re.compile(r'\[DEPTRACER-PROBE\].*No module named [\'"]([a-zA-Z0-9_\.]+)[\'"]')
+    PATTERN2 = re.compile(r'\[DEPTRACER-PROBE\].*cannot import name [\'"]([a-zA-Z0-9_]+)[\'"] from [\'"]([a-zA-Z0-9_\.]+)[\'"]')
+    
+    @classmethod
+    def detect_hidden_imports(cls, stderr_log_path):
+        hidden = set()
+        if not stderr_log_path or not os.path.exists(stderr_log_path):
+            return []
+        try:
+            with open(stderr_log_path, 'r', errors='ignore') as f:
+                for line in f:
+                    m1 = cls.PATTERN.search(line)
+                    if m1: hidden.add(m1.group(1))
+                    
+                    m2 = cls.PATTERN2.search(line)
+                    if m2: hidden.add(f"{m2.group(2)}.{m2.group(1)}")
+        except Exception:
+            pass
+        return list(hidden)
 
 class TraceParser:
-  
     _SYSTEM_CACHE = set()
     
     SYSCALL_ANY = re.compile(
@@ -128,4 +148,28 @@ class TraceParser:
 
 def extract_missing_libraries(log_file_path, verbose=False):
     yield from TraceParser.stream_missing_libraries(log_file_path, verbose=verbose)
-    
+
+def extract_missing_libraries_and_hidden_imports(log_file_path, stderr_log_path=None, verbose=False):
+    try:
+        raw_missing = list(extract_missing_libraries(log_file_path, verbose=verbose))
+    except Exception:
+        raw_missing = []
+
+    hidden_modules = []
+    if stderr_log_path:
+        hidden_modules = HiddenImportDetector.detect_hidden_imports(stderr_log_path)
+
+    binaries = []
+    data_files = []
+
+    for item in raw_missing:
+        if item.endswith(('.so', '.dll', '.dylib', '.pyd')):
+            binaries.append(item)
+        elif item.endswith(('.pt', '.pth', '.onnx', '.pb', '.h5', '.joblib', '.npy', '.npz', '.pickle', '.pkl', '.json', '.yaml', '.yml', '.toml', '.csv', '.wav', '.mp3', '.flac', '.jpg', '.png', '.gif', '.txt', '.md', '.db', '.sqlite', '.dat')):
+            data_files.append(item)
+
+    return {
+        'binaries': binaries,
+        'data': data_files,
+        'hidden_imports': hidden_modules
+    }
